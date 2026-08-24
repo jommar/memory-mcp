@@ -7,9 +7,24 @@
   "engines": {
     "node": ">=22"
   },
+  "bin": {
+    "memory-mcp": "./dist/cli.js",
+    "memory-mcp-server": "./dist/src/index.js"
+  },
+  "files": [
+    "dist",
+    "src",
+    "cli.ts",
+    "docs",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit --noUnusedLocals --noUnusedParameters --noUncheckedSideEffectImports",
+    "prepare": "npm run build"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",

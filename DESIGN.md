@@ -36,7 +36,7 @@ Replaces the current deployment where a wiki-v2 Postgres+pgvector server is re-s
 | Vector search | sqlite-vec vec0 virtual tables (KNN: MATCH + LIMIT k); dimension pinned in a meta table |
 | Full-text | SQLite FTS5 with bm25() ranking |
 | Embeddings | Pluggable provider interface; default local MiniLM-L6 (Xenova/all-MiniLM-L6-v2, mean pooling, normalize, 384-dim) via @huggingface/transformers v3; optional OpenAI/Ollama providers |
-| Test/tooling | vitest, eslint, GitHub Actions |
+| Test/tooling | vitest, tsc-based lint (unused/dead-code checks), GitHub Actions |
 
 Spec notes:
 - Stateless core: no initialize handshake / Mcp-Session-Id; any instance serves any request.
@@ -116,6 +116,11 @@ Locked Defaults-block values plus the gaps they left, settled during items 11–
 - **consolidate applied-action ledger** — executed action ids persist in `meta` under key `consolidate_applied_actions` (append-only JSON; no migration). Action ids are stable: `` `${memoryId}:${signal}` ``; duplicate-cluster canonical member is the lexicographically smallest id.
 - **recall defaults** — the status hard filter defaults to `active`; both bm25 and cosine legs run unconditionally (no sequential fallback); FTS5 query tokens are quoted (embedded quotes doubled) before MATCH.
 - **embeddings** — `EmbeddingProvider` gained an optional `reset()` so a failed model load can be retried (local.ts clears its memoized load promise).
+- **MEMORY_* config surface (item 14)** — finalized var names: `MEMORY_DB_PATH` (default `~/.memory-mcp/memory.db` per §7), `MEMORY_TRANSPORT` (`stdio` | `http`, default `stdio`), `MEMORY_HTTP_HOST` (default `127.0.0.1` — HTTP binds localhost only per §9), `MEMORY_HTTP_PORT` (default `3000`), `MEMORY_EMBEDDING_OFFLINE` (default `true`), `MEMORY_EMBEDDING_DOWNLOAD_TIMEOUT_MS` (default `300000`), `MEMORY_EMBEDDING_CACHE_DIR` (default `~/.memory-mcp/cache`). Env-only, no config file (§12). Resolves the §12 config-var-naming open item.
+- **offline-first embeddings (item 14, resolves security follow-up M2)** — the local provider defaults to `offline: true`, so a cache miss never triggers an implicit HF CDN fetch; first-run model download is an explicit opt-in (`MEMORY_EMBEDDING_OFFLINE=false`) guarded by `MEMORY_EMBEDDING_DOWNLOAD_TIMEOUT_MS`. A timed-out load clears the provider's memoized load promise so the next embed retries; non-timeout load failures keep requiring `reset()`. Both knobs flow from `src/config.ts` through `src/index.ts` into `createLocalEmbeddingProvider`.
+- **MRTR interactive conflict resolution (item 15)** — `remember` gains an `interactive` opt-in. On a modern (2026-07-28) request with a mid-band conflict it returns an `input_required` result eliciting merge-vs-create; the chosen branch completes on a retry that carries `inputResponses` plus a byte-exact echoed `requestState`. `requestState` is integrity-protected with `createRequestStateCodec` (HMAC-SHA256, optional `ServerDependencies.requestStateKey`, per-process random default), wired via `ServerOptions.requestState.verify`; tampered state is refused with `-32602`. Merge resolves to `merged:<target>` with no write; create forces the write past dedupe (`RememberOptions.force`). On stateless legacy HTTP (no envelope) the handler degrades to the plain `conflict:[candidates]` result — no protocol error.
+- **Packaging, docs and CI (item 17)** — the package compiles to `dist/` (`tsconfig.build.json`, `npm run build`, run by `prepare`); the tarball ships compiled JS plus the `.ts` sources. Bins: `memory-mcp` → `dist/cli.js` and `memory-mcp-server` → `dist/src/index.js`. Both `cli.ts` and `src/index.ts` direct-invocation guards compare `realpathSync(argv[1])` vs the module path so the npm `.bin` symlinks fire correctly from a clean install. Node refuses type-stripping under `node_modules`, so raw-TS bins are impossible — hence the compile step. Lint is tsc-based (`--noUnusedLocals --noUnusedParameters --noUncheckedSideEffectImports`) rather than eslint — minimal, zero new deps, green on this repo (removed five dead imports to get there). README quickstart covers stdio + HTTP + all `MEMORY_*` vars; `docs/tools.md` documents the ten tools; `docs/reliability.md` summarizes DESIGN §5; LICENSE is MIT; CI runs lint + typecheck + tests on push/PR on Node 22 and 24.
+- **CLI (item 16)** — `memory-mcp export|import|reindex|stats` subcommands: `export <outDir>`, `import <stagingDir>`, `reindex`, `stats`; config comes from `MEMORY_*` env vars only (no CLI flags beyond the positional dirs; `--help`/no-command print usage). **Export** writes one markdown frontmatter file per memory (`<outDir>/<key>.md`, atomic tmp+rename, no `.tmp` leftovers), fields in order `key/title/tags/parent/type` where `parent` = the memory's `scope`; `tags` omitted when empty; values containing `:`/`#`/`"` (or empty/whitespace-edged) are double-quoted with `"` escaped — the known-good edge-case list from wiki-v2's contract. **Import** requires `key` (`^[a-z0-9-]+$`), `title`, `parent`, `type` (enum) per frontmatter block; `tags` optional (bracketed list, default `[]`). Multi-section files and concatenated files are tolerated; blocks without a `key` are ignored as preamble; a trailing `---` belongs to the previous body. Every staged file is parsed and validated before anything is written; per-file quarantine moves failing files to `<staging>/fail/` (with a per-file error summary) and valid files to `<staging>/success/`; all accepted blocks insert in ONE transaction (no partial writes from a failing file). Keys already in the store — or declared earlier in the same batch — are refused with a provenance report (`skipped <key> from <file>: already exists in store | duplicate of a key declared in <file>`); existing rows are never overwritten. Exit code is 0 only when every block imported; any refused key or quarantined file exits 1. Imported memories re-derive lifecycle fields (tier + STM expiry by type per §5, source `user-stated`, status `active`, importance 3) and write **no vectors** — `reindex` backfills them. **Reindex** rebuilds FTS5 (`INSERT INTO memories_fts(memories_fts) VALUES('rebuild')`) and wipes + re-embeds every `memories_vec` row from stored `content` (embedding text matches `remember()`'s write path, not title+content); a vector failure leaves FTS rebuilt, reports on stderr, exits 1. **Stats** prints memory counts by tier and status plus link count. Body content with a `---`-only line does not roundtrip (contract limitation inherited from wiki-v2); links/history/timestamps/status are not part of the v1 export/import contract.
 
 ## 6. Tool surface (10)
 
@@ -132,8 +137,9 @@ Locked Defaults-block values plus the gaps they left, settled during items 11–
 | `promote(key)` | short → long tier; clears expires_at |
 | `consolidate(opts)` | heuristic report (§5); `apply: [actionIds]` executes selections |
 
-Import/export/reindex = CLI subcommands (`memory-mcp export|import|reindex`), not tools.
-Markdown frontmatter format modeled on wiki-v2's import/export contract (key/title/tags/parent).
+Import/export/reindex = CLI subcommands (`memory-mcp export|import|reindex|stats`), not tools.
+Markdown frontmatter format modeled on wiki-v2's import/export contract (key/title/tags/parent,
+plus `type`); finalized CLI behavior and flags in §5 "Resolved at implementation".
 
 ## 7. Repo layout
 
@@ -147,9 +153,12 @@ Markdown frontmatter format modeled on wiki-v2's import/export contract (key/tit
 │   ├── core/{remember,recall,reliability,lifecycle,links}.ts
 │   └── embeddings/{types,local,openai,ollama}.ts
 ├── cli.ts                  # export/import/reindex/stats
+├── src/index.ts + cli.ts compile to dist/ (tsconfig.build.json, `npm run build`)
 ├── test/                   # vitest unit + integration (in-memory SQLite)
 ├── docs/                   # tool reference, reliability model
-└── README.md
+├── .github/workflows/ci.yml # lint + typecheck + test on push/PR (Node 22/24)
+├── README.md
+└── LICENSE                 # MIT
 ```
 
 Search pipeline detail: FTS5 bm25 + vec0 cosine → RRF fusion → multiply reliability &

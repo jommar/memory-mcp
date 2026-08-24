@@ -18,7 +18,13 @@ export interface EmbeddingTensor {
 
 export type LoadedModel = (texts: string[]) => Promise<EmbeddingTensor>;
 
-export type ModelLoader = (config: { cacheDir: string; offline: boolean }) => Promise<LoadedModel>;
+export interface ModelLoadConfig {
+  cacheDir: string;
+  offline: boolean;
+  downloadTimeoutMs: number;
+}
+
+export type ModelLoader = (config: ModelLoadConfig) => Promise<LoadedModel>;
 
 const loadTransformersModel: ModelLoader = async ({ cacheDir, offline }) => {
   const extractor = await pipeline('feature-extraction', LOCAL_MODEL_ID, {
@@ -32,9 +38,38 @@ const loadTransformersModel: ModelLoader = async ({ cacheDir, offline }) => {
   };
 };
 
+// Races a model load against a stall guard. On timeout the memoized load
+// promise is cleared so the next embed retries (a stalled first-run download
+// is transient); any other load failure keeps the memoized rejection until
+// reset() — retrying a genuinely broken load on every call would only churn.
+const withDownloadTimeout = <T>(promise: Promise<T>, ms: number, onTimeout: () => void): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      onTimeout();
+      reject(new Error(`model load exceeded ${ms}ms timeout`));
+    }, ms);
+    timer.unref?.();
+  });
+  const raced = Promise.race([promise, timeout]);
+  raced.then(
+    () => {
+      if (timer !== undefined) clearTimeout(timer);
+    },
+    () => {
+      if (timer !== undefined) clearTimeout(timer);
+    },
+  );
+  return raced;
+};
+
 export interface LocalEmbeddingOptions {
   cacheDir?: string;
+  // Offline-first: never reach out to the HF CDN on a cache miss. Set false to
+  // opt in to a first-run model download.
   offline?: boolean;
+  // Stall guard for an opted-in first-run download; 0 disables it.
+  downloadTimeoutMs?: number;
   loadModel?: ModelLoader;
   maxChars?: number;
 }
@@ -43,14 +78,23 @@ export const createLocalEmbeddingProvider = (
   options: LocalEmbeddingOptions = {},
 ): EmbeddingProvider => {
   const cacheDir = options.cacheDir ?? defaultCacheDir();
-  const offline = options.offline ?? false;
+  const offline = options.offline ?? true;
+  const downloadTimeoutMs = options.downloadTimeoutMs ?? 0;
   const maxChars = options.maxChars ?? DEFAULT_MAX_EMBED_CHARS;
   const loadModel = options.loadModel ?? loadTransformersModel;
 
   let modelPromise: Promise<LoadedModel> | undefined;
 
   const getModel = (): Promise<LoadedModel> => {
-    modelPromise ??= loadModel({ cacheDir, offline });
+    if (modelPromise === undefined) {
+      const load = loadModel({ cacheDir, offline, downloadTimeoutMs });
+      modelPromise =
+        !offline && downloadTimeoutMs > 0
+          ? withDownloadTimeout(load, downloadTimeoutMs, () => {
+              modelPromise = undefined;
+            })
+          : load;
+    }
     return modelPromise;
   };
 

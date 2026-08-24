@@ -6,7 +6,6 @@ import {
   listMemories,
   searchMemoriesByText,
   updateMemory,
-  type CreateMemoryInput,
   type MemoryRow,
   type MemorySource,
   type MemoryTier,

@@ -1,4 +1,5 @@
-import { chmodSync, existsSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
 
@@ -18,6 +19,9 @@ const restrictToOwner = (db: Database.Database, path: string): void => {
 };
 
 export const openDatabase = (path: string): Database.Database => {
+  if (!isMemoryDb(path)) {
+    mkdirSync(dirname(path), { recursive: true });
+  }
   const db = new Database(path);
   if (!isMemoryDb(path)) {
     // WAL does not apply to in-memory databases; their journal mode stays 'memory'.

@@ -2,7 +2,6 @@ import type Database from 'better-sqlite3';
 import {
   getMemory,
   type MemoryRow,
-  type MemorySource,
   type MemoryStatus,
   type MemoryTier,
 } from '../db/queries.js';

@@ -1,14 +1,15 @@
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import type Database from 'better-sqlite3';
 import { openDatabase } from '../../src/db/connection.js';
 import { MIGRATIONS, runMigrations } from '../../src/db/schema.js';
 import { initEmbeddingProvider } from '../../src/embeddings/types.js';
 import type { EmbeddingProvider } from '../../src/embeddings/types.js';
 import { createLocalEmbeddingProvider } from '../../src/embeddings/local.js';
-import type { ModelLoader } from '../../src/embeddings/local.js';
+import type { ModelLoader, LoadedModel } from '../../src/embeddings/local.js';
 
 const MODEL_CACHE_DIR = fileURLToPath(new URL('../../.cache/models', import.meta.url));
+const HAS_MODEL_CACHE = existsSync(MODEL_CACHE_DIR);
 
 const l2Norm = (vector: Float32Array): number =>
   Math.sqrt(vector.reduce((sum, x) => sum + x * x, 0));
@@ -30,7 +31,7 @@ const recordingLoader = (): { loader: ModelLoader; loads: () => number; seenText
 };
 
 describe('local MiniLM embedding provider', () => {
-  it(
+  it.skipIf(!HAS_MODEL_CACHE)(
     'yields 384-dim unit-norm deterministic float32 vectors offline (real model)',
     { timeout: 120_000 },
     async () => {
@@ -50,7 +51,7 @@ describe('local MiniLM embedding provider', () => {
     },
   );
 
-  it('registers through the item-5 dim guard with name local-minilm and dim 384', async () => {
+  it.skipIf(!HAS_MODEL_CACHE)('registers through the item-5 dim guard with name local-minilm and dim 384', async () => {
     const provider: EmbeddingProvider = createLocalEmbeddingProvider({
       cacheDir: MODEL_CACHE_DIR,
       offline: true,
@@ -117,5 +118,59 @@ describe('model-load retry after transient failure', () => {
     provider.reset!();
     const [vector] = await provider.embed(['x']);
     expect(vector.length).toBe(384);
+  });
+});
+
+describe('offline-first embedding defaults (item 14 config wiring)', () => {
+  it('defaults to offline so a cache miss never triggers an implicit download', async () => {
+    let captured: { cacheDir: string; offline: boolean; downloadTimeoutMs: number } | undefined;
+    const loader: ModelLoader = async (config) => {
+      captured = config;
+      return async (texts: string[]) => ({
+        dims: [texts.length, 384],
+        data: new Float32Array(texts.length * 384),
+      });
+    };
+    const provider = createLocalEmbeddingProvider({ loadModel: loader });
+    await provider.embed(['x']);
+    expect(captured!.offline).toBe(true);
+  });
+
+  it('rejects with a download timeout when an opted-in first-run download stalls, then retries', async () => {
+    let loads = 0;
+    const loader: ModelLoader = async () => {
+      loads += 1;
+      if (loads === 1) return new Promise<LoadedModel>(() => {});
+      return async (texts: string[]) => {
+        const data = new Float32Array(texts.length * 384);
+        for (let i = 0; i < data.length; i += 1) data[i] = 0.1;
+        return { dims: [texts.length, 384], data };
+      };
+    };
+    const provider = createLocalEmbeddingProvider({
+      loadModel: loader,
+      offline: false,
+      downloadTimeoutMs: 50,
+    });
+    await expect(provider.embed(['x'])).rejects.toThrow(/timeout/);
+    const [vector] = await provider.embed(['x']);
+    expect(vector.length).toBe(384);
+    expect(loads).toBe(2);
+  });
+
+  it('keeps a non-timeout load failure memoized until reset()', async () => {
+    let loads = 0;
+    const loader: ModelLoader = async () => {
+      loads += 1;
+      if (loads === 1) throw new Error('broken model');
+      return async (texts: string[]) => ({
+        dims: [texts.length, 384],
+        data: new Float32Array(texts.length * 384),
+      });
+    };
+    const provider = createLocalEmbeddingProvider({ loadModel: loader, offline: false, downloadTimeoutMs: 50 });
+    await expect(provider.embed(['x'])).rejects.toThrow(/broken model/);
+    await expect(provider.embed(['x'])).rejects.toThrow(/broken model/);
+    expect(loads).toBe(1);
   });
 });

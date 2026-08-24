@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -36,6 +36,16 @@ describe('openDatabase', () => {
     expect(reopened.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='t'").get())
       .toBeDefined();
     reopened.close();
+  });
+
+  it('creates the parent directory of a file path (zero-config default home)', () => {
+    const home = tempDir();
+    const dbPath = join(home, '.memory-mcp', 'memory.db');
+    const db = openDatabase(dbPath);
+    expect(db.open).toBe(true);
+    expect(db.prepare('SELECT 1 AS x').get()).toEqual({ x: 1 });
+    db.close();
+    expect(existsSync(join(home, '.memory-mcp'))).toBe(true);
   });
 
   it('puts a file DB in WAL journal mode', () => {

@@ -4,3 +4,4 @@ coverage/
 *.log
 .orchestrator/
 .cache/
+*.tgz

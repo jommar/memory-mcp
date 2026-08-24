@@ -25,7 +25,7 @@ const STM_TTL_HOURS: Record<MemoryType, number | null> = {
   lesson: null,
 };
 
-const tierAndTtl = (type: MemoryType): { tier: MemoryTier; ttlMs: number | null } => {
+export const tierAndTtl = (type: MemoryType): { tier: MemoryTier; ttlMs: number | null } => {
   const hours = STM_TTL_HOURS[type];
   if (hours === null) return { tier: 'long', ttlMs: null };
   return { tier: 'short', ttlMs: hours * 3_600_000 };
@@ -43,6 +43,7 @@ export interface RememberInput {
 
 export interface RememberOptions {
   embedder?: EmbeddingProvider | null;
+  force?: boolean;
 }
 
 export interface RememberResult {
@@ -85,7 +86,7 @@ export const remember = async (
     }
   }
 
-  if (vector) {
+  if (vector && !options.force) {
     const neighbors = db
       .prepare(
         'SELECT memory_rowid, distance FROM memories_vec WHERE embedding MATCH ? AND k = ?',
