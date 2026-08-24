@@ -70,5 +70,10 @@ export const createLocalEmbeddingProvider = (
       }
       return vectors;
     },
+    // A rejected load is not retried by the memoized promise; reset() clears it
+    // so a transient failure (network, model cache) can be retried on the next call.
+    reset(): void {
+      modelPromise = undefined;
+    },
   };
 };

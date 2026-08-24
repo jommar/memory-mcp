@@ -106,6 +106,13 @@ const appliedFilenames = (db: Database.Database): Set<string> => {
   return new Set(rows.map((row) => row.filename));
 };
 
+const currentSchemaVersion = (db: Database.Database): string | undefined => {
+  const row = db.prepare(`SELECT value FROM meta WHERE key = 'schema_version'`).get() as
+    | { value: string }
+    | undefined;
+  return row?.value;
+};
+
 const recordSchemaVersion = (db: Database.Database, version: string): void => {
   db.prepare(
     `INSERT INTO meta (key, value) VALUES ('schema_version', ?)
@@ -133,5 +140,7 @@ export const runMigrations = (db: Database.Database, migrations: readonly Migrat
     applyMigration(db, migration);
     version += 1;
   }
-  if (version > 0) recordSchemaVersion(db, String(version));
+  if (version > 0 && currentSchemaVersion(db) !== String(version)) {
+    recordSchemaVersion(db, String(version));
+  }
 };

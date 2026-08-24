@@ -4,6 +4,7 @@ export interface EmbeddingProvider {
   readonly name: string;
   readonly dim: number;
   embed(texts: string[]): Promise<Float32Array[]>;
+  reset?(): void;
 }
 
 const META_PROVIDER_KEY = 'embedding_provider';

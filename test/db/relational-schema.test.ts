@@ -18,7 +18,7 @@ describe('relational schema migrations', () => {
   const columnsOf = (database: Database.Database, table: string): string[] =>
     (database.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
 
-  it('creates the memories table with exactly the DESIGN §4 columns', () => {
+  it('creates the memories table with all expected columns', () => {
     expect(columnsOf(migrate(), 'memories')).toEqual([
       'id', 'title', 'content', 'type', 'tier', 'scope', 'tags', 'status',
       'superseded_by', 'source', 'importance', 'confidence', 'observed_count',
@@ -52,6 +52,15 @@ describe('relational schema migrations', () => {
       | { value: string }
       | undefined;
     expect(row?.value).toBe('2');
+  });
+
+  it('re-running migrations on an already-migrated database is a strict no-op', () => {
+    const database = migrate();
+    const changes = (d: Database.Database): number =>
+      (d.prepare('SELECT total_changes() AS n').get() as { n: number }).n;
+    const before = changes(database);
+    runMigrations(database, MIGRATIONS);
+    expect(changes(database)).toBe(before);
   });
 
   it('keeps the FTS index in sync on INSERT of a memory row', () => {

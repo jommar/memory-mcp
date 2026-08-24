@@ -5,10 +5,7 @@ import { openDatabase } from '../../src/db/connection.js';
 import { MIGRATIONS, runMigrations } from '../../src/db/schema.js';
 import { initEmbeddingProvider } from '../../src/embeddings/types.js';
 import type { EmbeddingProvider } from '../../src/embeddings/types.js';
-import {
-  DEFAULT_MAX_EMBED_CHARS,
-  createLocalEmbeddingProvider,
-} from '../../src/embeddings/local.js';
+import { createLocalEmbeddingProvider } from '../../src/embeddings/local.js';
 import type { ModelLoader } from '../../src/embeddings/local.js';
 
 const MODEL_CACHE_DIR = fileURLToPath(new URL('../../.cache/models', import.meta.url));
@@ -76,7 +73,7 @@ describe('local MiniLM embedding provider', () => {
     });
     await provider.embed(['x'.repeat(200)]);
     const seen = rec.seenTexts()[0][0];
-    expect(seen.length).toBe(DEFAULT_MAX_EMBED_CHARS > 64 ? 64 : DEFAULT_MAX_EMBED_CHARS);
+    expect(seen.length).toBe(64);
     expect(seen).toBe('x'.repeat(64));
   });
 
@@ -99,5 +96,26 @@ describe('local MiniLM embedding provider', () => {
     await Promise.all([provider.embed(['a']), provider.embed(['b'])]);
     await provider.embed(['c']);
     expect(rec.loads()).toBe(1);
+  });
+});
+
+describe('model-load retry after transient failure', () => {
+  it('can retry after a failed model load is reset', async () => {
+    let loads = 0;
+    const loader: ModelLoader = async () => {
+      loads += 1;
+      if (loads === 1) throw new Error('transient load failure');
+      return async (texts: string[]) => {
+        const data = new Float32Array(texts.length * 384);
+        for (let i = 0; i < data.length; i += 1) data[i] = 0.1;
+        return { dims: [texts.length, 384], data };
+      };
+    };
+    const provider = createLocalEmbeddingProvider({ loadModel: loader });
+    await expect(provider.embed(['x'])).rejects.toThrow(/transient load failure/);
+    expect(typeof provider.reset).toBe('function');
+    provider.reset!();
+    const [vector] = await provider.embed(['x']);
+    expect(vector.length).toBe(384);
   });
 });

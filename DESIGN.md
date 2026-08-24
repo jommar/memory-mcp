@@ -104,6 +104,19 @@ Lifecycle rules surfaced by `consolidate`:
 
 All thresholds configurable; report-only until `apply` names specific action ids.
 
+### Resolved at implementation (v1)
+
+Locked Defaults-block values plus the gaps they left, settled during items 11–13:
+
+- **remember() dedupe/conflict bands** — cosine > 0.88 → `merged:<key>`; cosine in (0.6, 0.88] → `conflict:[candidates]` with no write; candidates are same-scope active memories. The 0.6 conflict floor is new (Defaults block only pinned 0.88).
+- **Tier default by type** — `session` and `project-state` default to `short` with STM TTLs (24h / 14d); every other type defaults to `long` with no expiry.
+- **procedure λ** — §4's decay table omits `procedure`; defaulted to 0.005 (same as decision/lesson).
+- **re-confirm staleness** — stale = days since (`last_confirmed_at` ?? `created_at`) exceeds `ln(2)/λ_type` (i.e. recency factor < 0.5), with `importance ≥ 3`.
+- **needs-expansion access proxy** — v1 has no `access_count` column; `observed_count` (confirmations + useful recalls) is the proxy at ≥ 10, content < 400 chars.
+- **consolidate applied-action ledger** — executed action ids persist in `meta` under key `consolidate_applied_actions` (append-only JSON; no migration). Action ids are stable: `` `${memoryId}:${signal}` ``; duplicate-cluster canonical member is the lexicographically smallest id.
+- **recall defaults** — the status hard filter defaults to `active`; both bm25 and cosine legs run unconditionally (no sequential fallback); FTS5 query tokens are quoted (embedded quotes doubled) before MATCH.
+- **embeddings** — `EmbeddingProvider` gained an optional `reset()` so a failed model load can be retried (local.ts clears its memoized load promise).
+
 ## 6. Tool surface (10)
 
 | Tool | Behavior |

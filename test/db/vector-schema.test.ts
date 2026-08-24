@@ -30,11 +30,6 @@ describe('vector schema migrations', () => {
     expect(ddl).toContain('distance_metric=cosine');
   });
 
-  it('records schema version for the full migration set', () => {
-    const row = migrate().prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string };
-    expect(row.value).toBe('2');
-  });
-
   it('accepts BigInt-bound ids on the declared integer primary key', () => {
     const database = migrate();
     database

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -15,6 +15,8 @@ function tempDir(): string {
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
+
+const permissionBits = (path: string): number => statSync(path).mode & 0o777;
 
 describe('openDatabase', () => {
   it('returns a working better-sqlite3 handle for :memory:', () => {
@@ -53,6 +55,15 @@ describe('openDatabase', () => {
   it('loads the sqlite-vec extension so vec_version() answers', () => {
     const db = openDatabase(':memory:');
     expect(db.prepare('SELECT vec_version() AS v').get()).toEqual({ v: 'v0.1.9' });
+    db.close();
+  });
+
+  it('restricts the database, wal and shm files to owner-only access', () => {
+    const dbPath = join(tempDir(), 'private.db');
+    const db = openDatabase(dbPath);
+    for (const suffix of ['', '-wal', '-shm']) {
+      expect(permissionBits(`${dbPath}${suffix}`), `${dbPath}${suffix}`).toBe(0o600);
+    }
     db.close();
   });
 });
