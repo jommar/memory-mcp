@@ -77,8 +77,8 @@ describe('npm pack tarball', () => {
     const pkgJson = await run('tar', ['-xOzf', tarballPath, 'package/package.json'], tmpRoot);
     const packaged = JSON.parse(pkgJson.stdout) as { bin: Record<string, string> };
     expect(packaged.bin).toEqual({
-      'memory-mcp': './dist/cli.js',
-      'memory-mcp-server': './dist/src/index.js',
+      'memory-mcp': 'dist/cli.js',
+      'memory-mcp-server': 'dist/src/index.js',
     });
   });
 });

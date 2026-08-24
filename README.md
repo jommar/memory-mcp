@@ -67,7 +67,7 @@ The store is created automatically at `~/.memory-mcp/memory.db`. Embeddings are
 **offline-first**: no model is downloaded unless you opt in.
 
 ```sh
-# opt in to the one-time model download (about 90 MB, MiniLM-L6, q8 quantized)
+# opt in to the one-time model download (about 23 MB, MiniLM-L6, q8 quantized)
 MEMORY_EMBEDDING_OFFLINE=false memory-mcp-server
 ```
 

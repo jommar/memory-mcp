@@ -8,8 +8,8 @@
     "node": ">=22"
   },
   "bin": {
-    "memory-mcp": "./dist/cli.js",
-    "memory-mcp-server": "./dist/src/index.js"
+    "memory-mcp": "dist/cli.js",
+    "memory-mcp-server": "dist/src/index.js"
   },
   "files": [
     "dist",
