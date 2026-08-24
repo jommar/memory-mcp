@@ -1,0 +1,26 @@
+{
+  "name": "@jommar/memory-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for persistent agent memory backed by SQLite (FTS5 + sqlite-vec) and local MiniLM embeddings",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "better-sqlite3": "^13.0.0",
+    "sqlite-vec": "0.1.9"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^25.9.5",
+    "typescript": "^7.0.0",
+    "vitest": "^4.1.0"
+  }
+}
