@@ -5,3 +5,6 @@ coverage/
 .orchestrator/
 .cache/
 *.tgz
+ui/dist/
+ui/dist-server/
+.playwright-mcp/

@@ -88,6 +88,7 @@ All configuration is via `MEMORY_*` environment variables (no config file):
 | `MEMORY_EMBEDDING_OFFLINE` | `true` | `false` opts in to the one-time model download |
 | `MEMORY_EMBEDDING_DOWNLOAD_TIMEOUT_MS` | `300000` | Timeout for a model download attempt |
 | `MEMORY_EMBEDDING_CACHE_DIR` | `~/.memory-mcp/cache` | Where downloaded models are cached |
+| `MEMORY_UI_PORT` | `3001` | Explorer UI port (dev tool; auto-increments when busy) |
 
 ## Tools
 
@@ -107,6 +108,30 @@ memory-mcp import ./staging  # validate, then import (never overwrites existing 
 memory-mcp reindex           # rebuild FTS + vector indexes from stored content
 memory-mcp stats             # print store counts
 ```
+
+## Memory explorer (UI)
+
+A read-only visual explorer for the store: links graph (React Flow, force-directed
+layout clustered by type), reliability breakdown per memory, history, supersession
+chains, filters by scope/type/tier/status, and a maintenance drawer listing
+`consolidate` proposals (orphans, stale entries, duplicate clusters) with
+click-to-select. It opens the SQLite database **read-only**, so it is safe
+to run alongside a live server and cannot mutate data.
+
+The UI lives in the `ui/` workspace and is a development tool — it is not part of
+the published package:
+
+```sh
+npm run ui:build   # compile the API server + bundle the frontend
+npm run ui:start   # serve at http://127.0.0.1:3001
+```
+
+For frontend development with hot reload: `npm run ui:dev` in one terminal
+(proxies `/api` to 3001) and `npm run ui:start` in another.
+
+If the port is taken, the server auto-increments (3001 → 3010) and prints the
+bound URL. Configuration: `MEMORY_DB_PATH` (same store as the server) and
+`MEMORY_UI_PORT` (default `3001`). The bind host is always `127.0.0.1`.
 
 ## Documentation
 

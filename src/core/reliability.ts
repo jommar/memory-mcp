@@ -34,18 +34,37 @@ export interface ReliabilityInput {
 
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
 
-export function computeReliability(input: ReliabilityInput): number {
+export interface ReliabilityFactors {
+  base: number;
+  recency: number;
+  corroboration: number;
+  penalty: number;
+}
+
+export const reliabilityFactors = (input: ReliabilityInput): ReliabilityFactors => {
   const anchor = input.lastConfirmedAt ?? input.createdAt;
   const days = (input.now - anchor) / DAY_MS;
-  const recency = Math.exp(-LAMBDA_BY_TYPE[input.type] * days);
-  const corroboration = 1 + Math.min(0.5, input.observedCount * 0.05);
-  const penalty = Math.pow(0.7, input.contradictionCount);
-  return clamp01(BASE_BY_SOURCE[input.source] * recency * corroboration * penalty);
+  return {
+    base: BASE_BY_SOURCE[input.source],
+    recency: Math.exp(-LAMBDA_BY_TYPE[input.type] * days),
+    corroboration: 1 + Math.min(0.5, input.observedCount * 0.05),
+    penalty: Math.pow(0.7, input.contradictionCount),
+  };
+};
+
+export function computeReliability(input: ReliabilityInput): number {
+  const factors = reliabilityFactors(input);
+  return clamp01(factors.base * factors.recency * factors.corroboration * factors.penalty);
 }
 
 // Single formula shared by the read-time path and the standalone function above.
-export const memoryReliability = (row: MemoryRow, now: number): number =>
-  computeReliability({
+export const memoryReliability = (row: MemoryRow, now: number): number => {
+  const factors = memoryReliabilityFactors(row, now);
+  return clamp01(factors.base * factors.recency * factors.corroboration * factors.penalty);
+};
+
+export const memoryReliabilityFactors = (row: MemoryRow, now: number): ReliabilityFactors =>
+  reliabilityFactors({
     source: row.source,
     type: row.type,
     observedCount: row.observed_count,

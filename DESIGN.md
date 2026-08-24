@@ -1,8 +1,8 @@
 # memory-mcp — Design Document
 
-Status: approved design, implementation not started
+Status: approved design, implementation complete (core + CLI + explorer UI)
 Decided: 2026-08-24 (design session)
-Next: run orchestrator skill (`investigate – plan` segment), then checkpoint before implementation
+Next: phase-2 UI work (consolidate visualization) when picked up
 
 ---
 
@@ -37,6 +37,7 @@ Replaces the current deployment where a wiki-v2 Postgres+pgvector server is re-s
 | Full-text | SQLite FTS5 with bm25() ranking |
 | Embeddings | Pluggable provider interface; default local MiniLM-L6 (Xenova/all-MiniLM-L6-v2, mean pooling, normalize, 384-dim) via @huggingface/transformers v3; optional OpenAI/Ollama providers |
 | Test/tooling | vitest, tsc-based lint (unused/dead-code checks), GitHub Actions |
+| Explorer UI | React 19 + Vite 8 + TypeScript SPA; React Flow (@xyflow/react) graph with dagre layout; read-only `node:http` API server (zero new server deps); cytoscape was replaced by React Flow during build for richer node cards |
 
 Spec notes:
 - Stateless core: no initialize handshake / Mcp-Session-Id; any instance serves any request.
@@ -121,6 +122,7 @@ Locked Defaults-block values plus the gaps they left, settled during items 11–
 - **MRTR interactive conflict resolution (item 15)** — `remember` gains an `interactive` opt-in. On a modern (2026-07-28) request with a mid-band conflict it returns an `input_required` result eliciting merge-vs-create; the chosen branch completes on a retry that carries `inputResponses` plus a byte-exact echoed `requestState`. `requestState` is integrity-protected with `createRequestStateCodec` (HMAC-SHA256, optional `ServerDependencies.requestStateKey`, per-process random default), wired via `ServerOptions.requestState.verify`; tampered state is refused with `-32602`. Merge resolves to `merged:<target>` with no write; create forces the write past dedupe (`RememberOptions.force`). On stateless legacy HTTP (no envelope) the handler degrades to the plain `conflict:[candidates]` result — no protocol error.
 - **Packaging, docs and CI (item 17)** — the package compiles to `dist/` (`tsconfig.build.json`, `npm run build`, run by `prepare`); the tarball ships compiled JS plus the `.ts` sources. Bins: `memory-mcp` → `dist/cli.js` and `memory-mcp-server` → `dist/src/index.js`. Both `cli.ts` and `src/index.ts` direct-invocation guards compare `realpathSync(argv[1])` vs the module path so the npm `.bin` symlinks fire correctly from a clean install. Node refuses type-stripping under `node_modules`, so raw-TS bins are impossible — hence the compile step. Lint is tsc-based (`--noUnusedLocals --noUnusedParameters --noUncheckedSideEffectImports`) rather than eslint — minimal, zero new deps, green on this repo (removed five dead imports to get there). README quickstart covers stdio + HTTP + all `MEMORY_*` vars; `docs/tools.md` documents the ten tools; `docs/reliability.md` summarizes DESIGN §5; LICENSE is MIT; CI runs lint + typecheck + tests on push/PR on Node 22 and 24.
 - **CLI (item 16)** — `memory-mcp export|import|reindex|stats` subcommands: `export <outDir>`, `import <stagingDir>`, `reindex`, `stats`; config comes from `MEMORY_*` env vars only (no CLI flags beyond the positional dirs; `--help`/no-command print usage). **Export** writes one markdown frontmatter file per memory (`<outDir>/<key>.md`, atomic tmp+rename, no `.tmp` leftovers), fields in order `key/title/tags/parent/type` where `parent` = the memory's `scope`; `tags` omitted when empty; values containing `:`/`#`/`"` (or empty/whitespace-edged) are double-quoted with `"` escaped — the known-good edge-case list from wiki-v2's contract. **Import** requires `key` (`^[a-z0-9-]+$`), `title`, `parent`, `type` (enum) per frontmatter block; `tags` optional (bracketed list, default `[]`). Multi-section files and concatenated files are tolerated; blocks without a `key` are ignored as preamble; a trailing `---` belongs to the previous body. Every staged file is parsed and validated before anything is written; per-file quarantine moves failing files to `<staging>/fail/` (with a per-file error summary) and valid files to `<staging>/success/`; all accepted blocks insert in ONE transaction (no partial writes from a failing file). Keys already in the store — or declared earlier in the same batch — are refused with a provenance report (`skipped <key> from <file>: already exists in store | duplicate of a key declared in <file>`); existing rows are never overwritten. Exit code is 0 only when every block imported; any refused key or quarantined file exits 1. Imported memories re-derive lifecycle fields (tier + STM expiry by type per §5, source `user-stated`, status `active`, importance 3) and write **no vectors** — `reindex` backfills them. **Reindex** rebuilds FTS5 (`INSERT INTO memories_fts(memories_fts) VALUES('rebuild')`) and wipes + re-embeds every `memories_vec` row from stored `content` (embedding text matches `remember()`'s write path, not title+content); a vector failure leaves FTS rebuilt, reports on stderr, exits 1. **Stats** prints memory counts by tier and status plus link count. Body content with a `---`-only line does not roundtrip (contract limitation inherited from wiki-v2); links/history/timestamps/status are not part of the v1 export/import contract.
+- **Explorer UI (item 18)** — read-only visual explorer in the `ui/` npm workspace (not published). Architecture: `ui/server` is a plain `node:http` JSON API (zero new server deps) serving `GET /api/graph`, `/api/memory/:id` (row + reliability factor breakdown via `memoryReliabilityFactors`, history, supersession chain, neighbor links), `/api/stats`, `/api/consolidate`, plus the built SPA from `ui/dist` with SPA fallback and a `safeJoin` traversal guard; `ui/app` is a Vite 8 + React 19 SPA rendering the links graph with React Flow (`@xyflow/react`) — card-style custom nodes (type chip, importance, reliability bar), edges styled per kind (`related` solid gray, `supersedes` dashed blue arrow, `contradicts` red animated), minimap + controls, dark `colorMode`. Cytoscape was the first choice and was replaced mid-build for richer node rendering. Layout is deterministic d3-force (`d3-force`, replaced dagre after it collapsed mostly-unlinked stores into a single column): force simulation with type-anchor forces on a 4×2 region grid, link/charge/collide forces, golden-angle seeded init + fixed tick count, computed once per graph payload client-side so filtering never reshuffles positions. A **maintenance drawer** (phase 2) lists `consolidate` proposals grouped by signal with click-to-select on the graph and clickable duplicate-cluster member chips — report-only; applying stays with the MCP tool. Data access opens the SQLite file via a new `openDatabaseReadOnly` (`better-sqlite3 { readonly: true }` — writes throw at the SQL layer; sqlite-vec still registered because `consolidateReport` queries `memories_vec`), so the UI cannot mutate the store and works while the MCP server is live (WAL). New read helpers: `listLinks`, `listHistory` (src/db/queries.ts); `reliabilityFactors`/`memoryReliabilityFactors` exports (src/core/reliability.ts). Config: `MEMORY_DB_PATH` shared with the server, `MEMORY_UI_PORT` (default 3001) with EADDRINUSE auto-increment up to 10 attempts (3001–3010) then a clear error; host hard-wired 127.0.0.1. Tests: payload unit tests + fetch-level HTTP integration + `safeJoin` traversal cases + port-retry (increment and budget-exhaustion) in `ui/test/`; CI runs `ui:typecheck` + `ui:build` + `ui:test` after the root job steps.
 
 ## 6. Tool surface (10)
 
@@ -154,9 +156,14 @@ plus `type`); finalized CLI behavior and flags in §5 "Resolved at implementatio
 │   └── embeddings/{types,local,openai,ollama}.ts
 ├── cli.ts                  # export/import/reindex/stats
 ├── src/index.ts + cli.ts compile to dist/ (tsconfig.build.json, `npm run build`)
+├── ui/                     # explorer UI workspace (dev tool, not published)
+│   ├── server/{api,http,index}.ts   # read-only JSON API + static server (tsc → dist-server/)
+│   ├── src/                # React SPA (vite → dist/): GraphView, DetailPanel, Filters, StatsBar
+│   ├── test/               # vitest: api payloads, http integration, safeJoin, port retry
+│   └── tsconfig{,.server,.test}.json
 ├── test/                   # vitest unit + integration (in-memory SQLite)
 ├── docs/                   # tool reference, reliability model
-├── .github/workflows/ci.yml # lint + typecheck + test on push/PR (Node 22/24)
+├── .github/workflows/ci.yml # lint + typecheck + test + ui:typecheck + ui:build + ui:test (Node 22/24)
 ├── README.md
 └── LICENSE                 # MIT
 ```
@@ -218,9 +225,14 @@ migration without reindex · auto-migration of existing memory store · remote-h
   `/home/jommar/.claude/skills/dispatch/` (persona-builder.mjs, write-handoff.mjs);
   personas mmc-context-priorart / mmc-context-stack already exist in its personas/ dir.
 
-## 12. Open items (resolve during implementation)
+## 12. Open items
 
-- Exact consolidation thresholds tuning (defaults above are starting values)
-- npm package scope/name (@scope/memory-mcp vs bare memory-mcp)
-- Config var naming (MEMORY_* prefix) and config-file support (v1: env only)
-- Whether `consolidate` runs automatically on server start or only on demand (lean: on demand)
+Resolved during implementation:
+
+- npm package scope/name → `@jommar/memory-mcp` (package.json, published)
+- Config var naming → `MEMORY_*` env-only, finalized in item 14 (+ `MEMORY_UI_PORT` in item 18)
+- `consolidate` on server start vs on demand → **on demand** (v1 shipped report-only on demand)
+
+Still open:
+
+- Exact consolidation threshold tuning (defaults are starting values; needs real-store usage data)

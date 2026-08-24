@@ -4,6 +4,9 @@
   "description": "MCP server for persistent agent memory backed by SQLite (FTS5 + sqlite-vec) and local MiniLM embeddings",
   "type": "module",
   "license": "MIT",
+  "workspaces": [
+    "ui"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jommar/memory-mcp.git"
@@ -28,6 +31,11 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit --noUnusedLocals --noUnusedParameters --noUncheckedSideEffectImports",
+    "ui:dev": "npm run dev --workspace @jommar/memory-mcp-ui",
+    "ui:build": "npm run build --workspace @jommar/memory-mcp-ui",
+    "ui:start": "npm run start --workspace @jommar/memory-mcp-ui",
+    "ui:test": "npm run test --workspace @jommar/memory-mcp-ui",
+    "ui:typecheck": "npm run typecheck --workspace @jommar/memory-mcp-ui",
     "prepublishOnly": "npm run lint && npm run typecheck && npm test",
     "prepare": "npm run build"
   },

@@ -287,6 +287,11 @@ export const listOutgoingLinks = (db: Database.Database, fromId: string): LinkRo
   return rows.map(mapLink);
 };
 
+export const listLinks = (db: Database.Database): LinkRow[] => {
+  const rows = db.prepare(`${SELECT_LINK} ORDER BY rowid ASC`).all() as StoredLink[];
+  return rows.map(mapLink);
+};
+
 export const listIncomingLinks = (
   db: Database.Database,
   toId: string,
@@ -297,4 +302,36 @@ export const listIncomingLinks = (
     .prepare(`${SELECT_LINK} WHERE to_id = ? ORDER BY rowid ASC LIMIT ? OFFSET ?`)
     .all(toId, limit, offset) as StoredLink[];
   return rows.map(mapLink);
+};
+
+export interface HistoryRow {
+  memoryId: string;
+  contentBefore: string | null;
+  contentAfter: string | null;
+  reason: string | null;
+  changedAt: string;
+}
+
+interface StoredHistory {
+  memory_id: string;
+  content_before: string | null;
+  content_after: string | null;
+  reason: string | null;
+  changed_at: string;
+}
+
+export const listHistory = (db: Database.Database, id: string): HistoryRow[] => {
+  const rows = db
+    .prepare(
+      `SELECT memory_id, content_before, content_after, reason, changed_at
+       FROM history WHERE memory_id = ? ORDER BY changed_at ASC, rowid ASC`,
+    )
+    .all(id) as StoredHistory[];
+  return rows.map((row) => ({
+    memoryId: row.memory_id,
+    contentBefore: row.content_before,
+    contentAfter: row.content_after,
+    reason: row.reason,
+    changedAt: row.changed_at,
+  }));
 };

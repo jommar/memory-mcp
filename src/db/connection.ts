@@ -32,3 +32,14 @@ export const openDatabase = (path: string): Database.Database => {
   sqliteVec.load(db);
   return db;
 };
+
+// Read-only handle for tooling (the ui/ explorer). Writes throw at the SQLite
+// layer; no journal/chmod side effects. sqlite-vec is still registered because
+// consolidate's duplicate scan queries the memories_vec virtual table, which
+// needs its module even for reads.
+export const openDatabaseReadOnly = (path: string): Database.Database => {
+  const db = new Database(path, { readonly: true });
+  db.pragma('foreign_keys = ON');
+  sqliteVec.load(db);
+  return db;
+};
